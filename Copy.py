@@ -4,8 +4,15 @@
 import RPi.GPIO as GPIO
 import MFRC522
 import signal
+import time
 
 continue_reading = True
+write_mode = False
+card_data = []
+
+#populate card data w/ defaults
+for x in range(0,16):
+    card_data.append(0x00)
 
 # Capture SIGINT for cleanup when the script is aborted
 def end_read(signal,frame):
@@ -22,76 +29,60 @@ MIFAREReader = MFRC522.MFRC522()
 
 # This loop keeps checking for chips. If one is near it will get the UID and authenticate
 while continue_reading:
-    
-    # Scan for cards    
+    # Scan for cards
     (status,TagType) = MIFAREReader.MFRC522_Request(MIFAREReader.PICC_REQIDL)
 
     # If a card is found
     if status == MIFAREReader.MI_OK:
         print "Card detected"
-    
+
     # Get the UID of the card
     (status,uid) = MIFAREReader.MFRC522_Anticoll()
 
     # If we have the UID, continue
     if status == MIFAREReader.MI_OK:
-
         # Print UID
         print "Card read UID: "+str(uid[0])+","+str(uid[1])+","+str(uid[2])+","+str(uid[3])
-    
-        # This is the default key for authentication
-        key = [0xFF,0xFF,0xFF,0xFF,0xFF,0xFF]
-        
+
         # Select the scanned tag
         MIFAREReader.MFRC522_SelectTag(uid)
 
-        # Authenticate
-        status = MIFAREReader.MFRC522_Auth(MIFAREReader.PICC_AUTHENT1A, 8, key, uid)
-        print "\n"
+        # Capture each sector of the scanned card
+        for x in range(0,16):
+            card_data[x] = MIFAREReader.MFRC522_Read(x)
 
-        # Check if authenticated
-        if status == MIFAREReader.MI_OK:
+        # Stop
+        MIFAREReader.MFRC522_StopCrypto1()
 
-            # Variable for the data to write
-            data = []
+        # Switch to write mode
+        continue_reading = False
+        write_mode = True
 
-            # Fill the data with 0xFF
-            for x in range(0,16):
-                data.append(0xFF)
+for x in range(5, 1, -1):
+    print 'Switching to write mode in ' + str(x) + ' seconds...'
+    time.sleep(1)
 
-            print "Sector 8 looked like this:"
-            # Read block 8
-            MIFAREReader.MFRC522_Read(8)
-            print "\n"
+while write_mode:
+    # Scan for cards
+    (status,TagType) = MIFAREReader.MFRC522_Request(MIFAREReader.PICC_REQIDL)
 
-            print "Sector 8 will now be filled with 0xFF:"
-            # Write the data
-            MIFAREReader.MFRC522_Write(8, data)
-            print "\n"
+    # If a card is found
+    if status == MIFAREReader.MI_OK:
+        print "Card detected"
 
-            print "It now looks like this:"
-            # Check to see if it was written
-            MIFAREReader.MFRC522_Read(8)
-            print "\n"
+    # Get the UID of the card
+    (status,uid) = MIFAREReader.MFRC522_Anticoll()
 
-            data = []
-            # Fill the data with 0x00
-            for x in range(0,16):
-                data.append(0x00)
+    # If we have the UID, continue
+    if status == MIFAREReader.MI_OK:
+        # Fill data w/ captured result from previous read
+        for x in range(0,16):
+            MIFAREReader.MFRC522_Write(x, card_data[x])
 
-            print "Now we fill it with 0x00:"
-            MIFAREReader.MFRC522_Write(8, data)
-            print "\n"
+        # Stop
+        MIFAREReader.MFRC522_StopCrypto1()
 
-            print "It is now empty:"
-            # Check to see if it was written
-            MIFAREReader.MFRC522_Read(8)
-            print "\n"
+        # Make sure to stop reading for cards
+        write_mode = False
 
-            # Stop
-            MIFAREReader.MFRC522_StopCrypto1()
-
-            # Make sure to stop reading for cards
-            continue_reading = False
-        else:
-            print "Authentication error"
+print 'Completed Copy'
